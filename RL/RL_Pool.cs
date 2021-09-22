@@ -21,13 +21,11 @@ public class RL_Pool : MonoBehaviour
 
     #endregion
 
-    public enum PoolType {Bridge, Dolley, Stairs};
-
     // Here, a user can define in the inspector, what type of pool
     // Info the game uses
     [System.Serializable] public class Pool
     {
-        public PoolType poolType;
+        public BridgeType bridgeType;
         public GameObject perfab;
         public int size;
     }
@@ -35,11 +33,11 @@ public class RL_Pool : MonoBehaviour
     public List<Pool> pools;
     // This is a way to use a reference string to load a particular
     // Object pool by name
-    public Dictionary<PoolType, Queue<GameObject>> dictPool;
+    public Dictionary<BridgeType, Queue<GameObject>> dictPool;
 
     void Start()
     {
-        dictPool = new Dictionary<PoolType, Queue<GameObject>>();
+        dictPool = new Dictionary<BridgeType, Queue<GameObject>>();
 
         // Go through every pool the user has listed
         foreach (Pool pool in pools)
@@ -47,7 +45,7 @@ public class RL_Pool : MonoBehaviour
             Queue<GameObject> poolQueue = new Queue<GameObject>();
 
             // Create a dictionary reference to each queue
-            dictPool.Add(pool.poolType, poolQueue);
+            dictPool.Add(pool.bridgeType, poolQueue);
 
             // Instantiate every GameObject inside the pool specifications
             for (int i = 0; i < pool.size; i++)
@@ -64,19 +62,19 @@ public class RL_Pool : MonoBehaviour
     // This function allows us to make an object from the object pool
     // Appear where we need it
     // We also return the GameObject for use by other scripts
-    public GameObject SpawnFromPool(PoolType pPoolType, Vector3 pPos, Quaternion pRotation)
+    public GameObject SpawnFromPool(BridgeType pBridgeType, Vector3 pPos, Quaternion pRotation, Transform pTransform)
     {
         // Check if the object at the top of the queue is being used
         // We only want to pull an object that isn't active
         GameObject obj = null;
-        for (int i = 0; i <dictPool[pPoolType].Count; i++)
+        for (int i = 0; i < dictPool[pBridgeType].Count; i++)
         {
             // Grab an obj from the queue
-            obj = dictPool[pPoolType].Dequeue();
+            obj = dictPool[pBridgeType].Dequeue();
             // If the item is inactive, we can use it, otherwise, put it back
             if (obj.activeSelf)
             {
-                dictPool[pPoolType].Enqueue(obj);
+                dictPool[pBridgeType].Enqueue(obj);
             }
             else
             {
@@ -92,9 +90,23 @@ public class RL_Pool : MonoBehaviour
         obj.transform.position = pPos;
         obj.transform.rotation = pRotation;
 
+        // Set it's new parent
+        obj.transform.parent = pTransform;
+
         // Make sure we put it back in the queue afterwards
-        dictPool[pPoolType].Enqueue(obj);
+        dictPool[pBridgeType].Enqueue(obj);
 
         return obj;
+    }
+
+    // Return an object to the pool
+    public void ReturnToPool(BridgeType pBridgeType, GameObject obj)
+    {
+        // Deactivate the object
+        obj.SetActive(false);
+        // Reset it's parent
+        obj.transform.parent = transform;
+        // Put it back in its related queue
+        dictPool[pBridgeType].Enqueue(obj);
     }
 }

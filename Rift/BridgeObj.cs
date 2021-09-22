@@ -16,30 +16,18 @@ public class BridgeObj : MonoBehaviour
     public PD pD;
     [HideInInspector]
     public AC aC;
+    [HideInInspector] public RiftObj parent;
 
     /////////////////////
     // SELF REFERENCES //
     /////////////////////
 
     private BridgeObj_Mesh bridgeObj_Mesh;
-
+ 
     ///////////////////
     // USER SETTINGS //
     ///////////////////
-    
-    public BridgeData bridgeData;
 
     public BridgeType bridgeType = BridgeType.None;
-    public DolleyType dolleyType = DolleyType.A;
-    public StairType stairType = StairType.Lower;
-
-    public void PassStart()
-    {
-        bridgeObj_Mesh = GetComponent<BridgeObj_Mesh>();
-
-        // Setting up the bridgeData class for it's specific type
-
-        // Changing the mess using BridgeObj_Mesh to get the right
-        // Art dependent on it's surrounding bridges
-    }
+    public PlankDir plankDir = PlankDir.Hor;
 }
