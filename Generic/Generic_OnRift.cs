@@ -3,17 +3,16 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Events;
 
-public class Generic_OnTrigger : GenericTrigger
+public class Generic_OnRift : GenericTrigger
 {
+    
     void OnTriggerEnter(Collider collider)
     {
         // The collider for the player is attached as a child. Make sure to look at the parent.
         if (collider.transform.parent.tag == tagName)
         {
-            // Pass yourself to the UM_Triggers controller
-            UM_Triggers.Instance.activeTrigger = this;
             // Invoke event
-            //onEnter_Event.Invoke();
+            onEnter_Event.Invoke();
         }
     }
 
@@ -27,10 +26,6 @@ public class Generic_OnTrigger : GenericTrigger
             {
                 onExit_Event.Invoke();
             }
-
-            // Reset the UM_Trigger controller
-            UM_Triggers.Instance.Deactivate_ActiveInteraction();
-            UM_Triggers.Instance.Deactivate_TriggerReference();
         }
     }
 }

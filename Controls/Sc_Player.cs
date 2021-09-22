@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -7,6 +8,17 @@ using System.Linq;
 
 public class Sc_Player : MonoBehaviour
 {
+    # region Singleton
+
+    public static Sc_Player Instance {get; private set; }
+
+    private void Awake()
+    {
+        Instance = this;
+    }
+
+    # endregion
+
     //////////////////////
     // WORLD REFERENCES //
     //////////////////////
@@ -21,17 +33,31 @@ public class Sc_Player : MonoBehaviour
 
     public GameObject player_Collider;
     public GameObject player_Animator;
+    public Transform player_Relative;
+    // This target is used when the player stands on a moving platform.
+    // player_Relative is updated to be a child of this target
+    public Transform player_Relative_Target = null;
+    // Animator Component
+    public Animator anim;
 
-    // private MoveCard faceDir = MoveCard.N;      // This will need to match the starting direction the player is facing at the beginning of the game
+    // Current facing direction
+    // This will need to match the starting direction the player is facing at the beginning of the game
+    public DirType cur_FaceDir;
+    // The direction we want to move to
+    public DirType new_FaceDir;
 
     ///////////////
     // Animation //
     ///////////////
 
+    // Animation coroutine
+    public Coroutine cr_PlayerAnimation;
     private AnimationMode animationMode = AnimationMode.Idle;
+    [HideInInspector] public MoveType moveType;  // Stores the type of player movement
+    [HideInInspector] public NonMoveType nonMoveType;       // For animations
 
     // Store the movement values as a list
-    public List<MoveCard> listOf_MoveCard;
+    public List<DirType> listOf_MoveCard;
     bool isMovementAnimating = false;   // This is used to check that the coroutine is currently running through the list of movement animations
     public float animationSpeed = 2f;
 
@@ -40,197 +66,112 @@ public class Sc_Player : MonoBehaviour
         WorldReferences();
 
         InitialiseLists();
+
+        Get_FaceDir();
     }
 
     void WorldReferences()
     {
-        gM = GameObject.FindGameObjectWithTag("GM").GetComponent<GM>();
-        pD = GameObject.FindGameObjectWithTag("PD").GetComponent<PD>();
+        gM = GM.Instance;
+        pD = PD.Instance;
 
         sI = gM.GetComponent<Sc_SortInput>();
     }
 
     void InitialiseLists()
     {
-        listOf_MoveCard = new List<MoveCard>();
+        listOf_MoveCard = new List<DirType>();
     }
 
-    void Update()
+    void Get_FaceDir()
     {
-        // Check for movement input
-        if (sI.isMove)
-        {
-            Prepare_Move(sI.moveCard);
-        }
-
-        // Check for undo
-        if (sI.undo)
-        {
-            Load_Action();
-        }
-
-        // We constantly check the animation mode
-        Update_Animation_Mode();
+        // Find the facing direction the player is starting at
+        // Transfer the rotation of y into dirType
+        int yRotation = (int)(Mathf.Round(player_Animator.transform.eulerAngles.y/90f));
+        cur_FaceDir = (DirType) (yRotation + 1);
     }
 
-    //////////
-    // DATA //
-    //////////
+    ////////////////////
+    // ANIMATION PRET //
+    ////////////////////
 
-    // This is the bulk of movement for the player in the game
-    // And what effects the player has on moving in the world
-    void Prepare_Move(MoveCard pMoveCard)
+    // Run animations
+    public void Run_Movements_Animation()
     {
-        // Check if movement is possible based on game rules and return what type of movement to perform
-        MoveType moveType = Check_MoveType(pMoveCard);
-        if (moveType == MoveType.Step)
-        {
-            // Perform movement and store action
-            Perform_Action(pMoveCard, false);
-            Store_Action(false);
-        }
-        else if (moveType == MoveType.Bridge)
-        {
-            Perform_Action(pMoveCard, true);
-            Store_Action(true);
-        }
-        else if (moveType == MoveType.None)
-        {
-            // Perform animation showing why movement isn't allowed
-        }
-    }
-
-    // Check if movement is possible, based on game rules
-    // And, what type of movement that might be
-    MoveType Check_MoveType(MoveCard pMoveCard)
-    {
-        // 1. Check for a rock
-        // A rock in front of the player will block player's movement
-        // Use raycasting (For now)
-        Ray ray_Forward = new Ray(player_Collider.transform.position, RL.card_To_Vect[pMoveCard]);
-        RaycastHit[] hit_Rock;
-        LayerMask mask_Rock = LayerMask.GetMask(LayerMask.LayerToName((int)CollLayers.Rock));
-        LayerMask mask_Floor = LayerMask.GetMask(LayerMask.LayerToName((int)CollLayers.Rock), LayerMask.LayerToName((int)CollLayers.Bridge));
-
-        hit_Rock = Physics.RaycastAll(ray_Forward, 1f, mask_Rock);
-
-        // If we hit something, we can't move
-        if (hit_Rock.Length > 0)
-        {
-            return MoveType.None;
-        }
-
-        // 2. Check for a floor (rock that is below and in front of us)
-        // When the player is not inside a puzzle
-        Ray ray_DownInFront = new Ray(player_Collider.transform.position + RL.card_To_Vect[pMoveCard], Vector3.down);
-        RaycastHit[] hit_Floor;
-
-        hit_Floor = Physics.RaycastAll(ray_DownInFront, 1f, mask_Floor);
-
-        // If there is no floor, when not inside a rift, we can't move onto that space (Currently)
-        if (hit_Floor.Length == 0 && pD.activeRift == null)
-        {
-            return MoveType.None;
-        }
-
-        // 3. Are we inside a puzzle?
-        if (pD.activeRift != null)
-        {
-            // 4. Is there a floor?
-            if (hit_Floor.Length == 0)
-            {
-                // 5. Do we have enough bridge pieces left?
-                // For now, we have infinite
-                if (pD.activeRift.bridgePiecesRemaining > 0)
-                {
-                    return MoveType.Bridge;
-                }
-                else
-                {
-                    return MoveType.None;
-                }
-            }
-
-            // 1. Inside the grid
-            // The player cannot move outside the grid unless there is a floor item there
-            // And they are leaving in the direction I allow them to (Without solving the puzzle yet)
-            // Or if the puzzle has been solved
-
-        }
-
-        return MoveType.Step;
-    }
-
-    ////////////////
-    // MOVE TYPES //
-    ////////////////
-
-    // Perform the disgnated player action
-    void Perform_Action(MoveCard pMoveCard, bool placeBridge)
-    {
-        // Update the player position inside the active rift, if one is active
-        if (pD.activeRift != null)
-        {
-            pD.activeRift.Update_PlayerRift_Pos(pMoveCard);
-        }
-
-        // Add the movement direction to the animation list and check what animation mode we're in
-        listOf_MoveCard.Add(pMoveCard);
-
         // Perform the list of movements, if they're not already running
         if (!isMovementAnimating)
         {
             isMovementAnimating = true;
-            StartCoroutine(Perform_Player_Movements());
-        }
-
-        // If we're placing a bridge, do that here
-        if (placeBridge)
-        {
-            // Place a bridge piece into the movement target location, where the player is currently
-            pD.activeRift.Place_Bridge(pD.activeRift.player_RiftPos);
+            cr_PlayerAnimation = StartCoroutine(Perform_Player_Movements());
         }
     }
 
-    // Store action
-    // Stores what action the player just took and what information needs to be stored in the DB
-    void Store_Action(bool placeBridge)
+    // Prepare animations states
+    public void Perform_Gradual(ActionKit actionKit, DirType moveCard)
     {
-        gM.Execute_Action(player_Collider.transform.position, placeBridge);
-    }
-
-    void Load_Action()
-    {
-        // Load the first item from the action list
-        if (gM.listOf_PlayerActions.Count > 0)
+        // MoveType
+        if (actionKit.moveType != MoveType.None)
         {
-            PlayerAction playerAction = gM.listOf_PlayerActions.Last();
-            gM.listOf_PlayerActions.Remove(playerAction);
-
-            // Place the player there
-            player_Collider.transform.position = playerAction.playerPos;
-            player_Animator.transform.position = playerAction.playerPos;
-            // Remove the most recent bridge
-            if (playerAction.isBridge)
+            // Currently, there's no need to check movetype while animating
+            // But this may become important later
+            if (actionKit.moveType == MoveType.Step)
             {
-                // Come back to this later, it's pretty complicated
+                // Add the movement direction to the animation list and check what animation mode we're in
+                listOf_MoveCard.Add(moveCard);
+            }
+            else if (actionKit.moveType == MoveType.Climb)
+            {
+                // Add the movement direction to the animation list and check what animation mode we're in
+                listOf_MoveCard.Add(moveCard);
             }
         }
+
+        // BuildType
+
+        // Minetype
+
+        // MetaType
+    }
+
+    ///////////////
+    // FUNCTIONS //
+    ///////////////
+
+    public void Update_PlayerPos_Instant(Vector3 pPos, DirType prv_MoveCard)
+    {
+        // Set player position
+        player_Animator.transform.position = pPos;
+        player_Collider.transform.position = pPos;
+        // Set player facing direction
+        player_Animator.transform.rotation = Quaternion.Euler(0f, ((int)prv_MoveCard - 1) * 90f, 0f);
     }
 
     ///////////////
     // ANIMATION //
     ///////////////
 
+    // Data changes that are gradual during player actions, such as animation
+
     IEnumerator Perform_Player_Movements()
     {
+        // The player will always rotate
+        // Rotate when the movement count is zero
+        if (listOf_MoveCard.Count == 0)
+        {
+            StartCoroutine(Animate_Player_Rotate(new_FaceDir));
+            cur_FaceDir = new_FaceDir;
+        }
+
         while (listOf_MoveCard.Count > 0)
         {
-            // Teleport the collider
-            player_Collider.transform.Translate(RL.card_To_Vect[listOf_MoveCard.First()]);
-
+            DirType dirType = listOf_MoveCard.First();
+            // Start the rotation and translation animation
+            // Rotate the character here too
+            StartCoroutine(Animate_Player_Rotate(dirType));
+            cur_FaceDir = dirType;
+            
             // Wait for the animation to finish playing
-            yield return Animate_Player_Translate(listOf_MoveCard.First());
+            yield return Animate_Player_Translate(dirType);
 
             // Remove the first item from the list
             listOf_MoveCard.Remove(listOf_MoveCard.First());
@@ -240,57 +181,143 @@ public class Sc_Player : MonoBehaviour
         yield return null;
     }
 
-    // Translate the player towards the collider object.
-    IEnumerator Animate_Player_Translate(MoveCard pMoveCard)
+    // Rotate the player towards the object
+    // This animation takes less time than the translation animation
+    public IEnumerator Animate_Player_Rotate(DirType pMoveCard)
     {
-        Vector3 startPos = player_Animator.transform.position;
-        Vector3 endPos = startPos + RL.card_To_Vect[pMoveCard];
+        // If we're climbing, always set the rotation value to north
+        if (moveType == MoveType.Climb)
+        {
+            pMoveCard = DirType.N;
+        }
+
+        Quaternion startRot = player_Animator.transform.rotation;
+        Quaternion endRot = Quaternion.Euler(0f, ((int)pMoveCard - 1) * 90f, 0f);
+
+        for (float t = 0f; t < 1f; t += Time.deltaTime*animationSpeed*3.5f)
+        {
+            player_Animator.transform.rotation = Quaternion.Lerp(startRot, endRot, t);
+            yield return null;
+        }
+
+        // Set player's final rotation
+        player_Animator.transform.rotation = endRot;
+
+        yield return null;
+    }
+
+    // Translate the player towards the collider object.
+    IEnumerator Animate_Player_Translate(DirType pMoveCard)
+    {
+        // Play SFX
+        AC.Instance.Audio_Character_Movement();
+
+        Vector3 startPos = player_Animator.transform.localPosition;
+        Vector3 endPos = startPos + RL.dir_To_Vect[pMoveCard];
 
         for (float t = 0f; t < 1f; t += Time.deltaTime*animationSpeed)
         {
-            player_Animator.transform.position = Vector3.Lerp(startPos, endPos, t);
+            player_Animator.transform.localPosition = Vector3.Lerp(startPos, endPos, t);
             yield return null;
         }
 
         // Player's final position should be specific
-        player_Animator.transform.position = endPos;
+        player_Animator.transform.localPosition = endPos;
 
         yield return null;
     }
 
     // Item animation states that update depending on player actions
-    void Update_Animation_Mode()
+    public void Update_Animation_Mode()
     {
         // Setup animation mode
-        if (listOf_MoveCard.Count == 0)
+        if (nonMoveType != NonMoveType.None)
         {
-            animationMode = AnimationMode.Idle;
+            animationMode = AnimationMode.Blocked;
         }
-        if (listOf_MoveCard.Count == 1)
+        // In climbing region
+        else if (moveType == MoveType.Climb)
         {
-            animationMode = AnimationMode.Walking;
+            if (listOf_MoveCard.Count == 0)
+            {
+                animationMode = AnimationMode.Hang;
+            }
+            if (listOf_MoveCard.Count == 1)
+            {
+                animationMode = AnimationMode.Climb;
+            }
+            else if (listOf_MoveCard.Count == 2)
+            {
+                animationMode = AnimationMode.Scramble;
+            }
         }
-        else if (listOf_MoveCard.Count == 2)
+        else
         {
-            animationMode = AnimationMode.Running;
+            if (listOf_MoveCard.Count == 0)
+            {
+                animationMode = AnimationMode.Idle;
+            }
+            if (listOf_MoveCard.Count == 1)
+            {
+                animationMode = AnimationMode.Walking;
+            }
+            else if (listOf_MoveCard.Count == 2)
+            {
+                animationMode = AnimationMode.Running;
+            }
         }
 
-        // Perform animation mode
-        if (animationMode == AnimationMode.Idle)
+        // Make sure to reset animation modes first
+        anim.SetBool("isWalk", false);
+        anim.SetBool("isHang", false);
+        anim.SetBool("isClimb", false);
+        
+        if (animationMode == AnimationMode.Hang)
         {
-
+            anim.SetBool("isHang", true);
+        }
+        else if (animationMode == AnimationMode.Climb)
+        {
+            anim.SetBool("isClimb", true);
+            animationSpeed = 4f;
+        }
+        else if (animationMode == AnimationMode.Scramble)
+        {
+            anim.SetBool("isClimb", true);
+            animationSpeed = 11f;
         }
         else if (animationMode == AnimationMode.Walking)
         {
+            anim.SetBool("isWalk", true);
             animationSpeed = 4f;
         }
         else if (animationMode == AnimationMode.Running)
         {
+            anim.SetBool("isWalk", true);
             animationSpeed = 11f;
         }
         else if (animationMode == AnimationMode.Blocked)
         {
+            anim.SetTrigger("isBlock");
+        }
 
+        // Reset the nonMoveType
+        nonMoveType = NonMoveType.None;
+    }
+
+    // Stop coroutine animation
+    public void Stop_Animation()
+    {
+        // Cancel the animation coroutine, if it's moving
+        if (cr_PlayerAnimation != null)
+        {
+            // Empty the list of movements
+            listOf_MoveCard = new List<DirType>();
+            // Reset the animation bool
+            isMovementAnimating = false;
+            // Stop the animation coroutine
+            StopCoroutine(cr_PlayerAnimation);
         }
     }
+
 }

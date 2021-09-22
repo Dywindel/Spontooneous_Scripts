@@ -9,29 +9,40 @@ public class Sc_SortInput : MonoBehaviour
 {
     PlayerControls controls;
 
+    // Control Scheme mode
+    // 0 - Keyboard and mouse, 1 - Gamepad
+    [System.NonSerialized] public int controlScheme = 1;
+
     //////////////
     // MOVEMENT //
     //////////////
 
-    [System.NonSerialized]
-    public Vector2 move;
-    [System.NonSerialized]
-    public MoveCard moveCard;
-    [System.NonSerialized]
-    public MoveCard storeMoveCard = MoveCard.None;
-    [System.NonSerialized]
-    public bool isMove = false;
+    [System.NonSerialized] public Vector2 move;
+    [System.NonSerialized] public Vector2 cameraStick;
+    [System.NonSerialized] public Vector2 mousePos;
+    [System.NonSerialized] public Vector2 cameraPan;
+    [System.NonSerialized] public DirType moveCard;
+    
+    [System.NonSerialized] public DirType storeMoveCard = DirType.None;
+    [System.NonSerialized] public bool isMove = false;
+    [System.NonSerialized] public bool toggle = false;
+    [System.NonSerialized] public bool stairsUp = false;
+    [System.NonSerialized] public bool stairsDown = false;
 
-    [System.NonSerialized]
-    public bool pause = false;
-    [System.NonSerialized]
-    public bool select = false;
-    [System.NonSerialized]
-    public bool start = false;
-    [System.NonSerialized]
-    public bool undo = false;
-    [System.NonSerialized]
-    public bool reset = false;
+    [System.NonSerialized] public bool isOptions = false;   // Whether we're in the options menu
+    [System.NonSerialized] public bool isPlayer = false;    // Whether we can move the player
+    [System.NonSerialized] public bool select = false;
+    [System.NonSerialized] public bool start = false;
+    [System.NonSerialized] public bool undo = false;
+    [System.NonSerialized] public bool reset = false;
+    [System.NonSerialized] public bool delete = false;
+    [System.NonSerialized] public bool warp = false;
+
+    // UI controls
+    [System.NonSerialized] public DirType moveCard_Menu;
+
+    // This will later be moved to options menu
+    public bool isHoldMode = true;
 
     // 'Jeneric' button triggers for held buttons
     // This generic format allows you to add as many buttons as you need
@@ -43,7 +54,8 @@ public class Sc_SortInput : MonoBehaviour
 	[System.NonSerialized]
 	public float[] jen_Timer;       // The current timer value. Activates the button when it reaches zero
     [System.NonSerialized]
-    private int jen_Total = 2;      // Number of 'jen' buttons being used. 0 - Undo, 1 - isMove
+    private int jen_Total = 6;      // Number of 'jen' buttons being used.
+    // 0 - Undo, 1 - isMove, 2 - Reset, 3 - StairsUp, 4 - StairsDown, 5 - Select
 
     void Awake()
     {
@@ -61,18 +73,35 @@ public class Sc_SortInput : MonoBehaviour
         // Setup input controls
         controls = new PlayerControls();
 
-        controls.Player.Pause.started += ctx => pause = true;
-        controls.Player.Pause.canceled += ctx => pause = false;
-        controls.Player.Select.performed += ctx => select = true;
-        controls.Player.Select.canceled += ctx => select = false;
+        controls.Player.Pause.started += ctx => Action_Pause();
+
+        controls.Player.Select.performed += ctx => jen_ActiveBool[5] = true;
+        controls.Player.Select.canceled += ctx => jen_ActiveBool[5] = false;
 
         controls.Player.Undo.performed += ctx => jen_ActiveBool[0] = true;
         controls.Player.Undo.canceled += ctx => jen_ActiveBool[0] = false;
 
-        controls.Player.Reset.started += ctx => reset = true;
-        controls.Player.Reset.performed += ctx => reset = false;
+        controls.Player.Reset.performed += ctx => jen_ActiveBool[2] = true;
+        controls.Player.Reset.canceled += ctx => jen_ActiveBool[2] = false;
+
+        // Removed the delete button, I think this will produce better puzzles
+        //controls.Player.Delete.started += ctx => Check_HoldOrTap(ref delete, 0);
+        //controls.Player.Delete.performed += ctx => Check_HoldOrTap(ref delete, 1);
+        //controls.Player.Delete.canceled += ctx => Check_HoldOrTap(ref delete, 2);
+
+        controls.Player.Toggle.started += ctx => Check_HoldOrTap(ref toggle, 0);
+        controls.Player.Toggle.performed += ctx => Check_HoldOrTap(ref toggle, 1);
+        controls.Player.Toggle.canceled += ctx => Check_HoldOrTap(ref toggle, 2);
+
+        controls.Player.StairsUp.performed += ctx => jen_ActiveBool[3] = true;
+        controls.Player.StairsUp.canceled += ctx => jen_ActiveBool[3] = false;
+
+        controls.Player.StairsDown.performed += ctx => jen_ActiveBool[4] = true;
+        controls.Player.StairsDown.canceled += ctx => jen_ActiveBool[4] = false;
 
         controls.Player.Move.performed += ctx => move = ctx.ReadValue<Vector2>();
+        controls.Player.Camera.performed += ctx => cameraStick = ctx.ReadValue<Vector2>();
+        controls.Player.Mouse.performed += ctx => mousePos = ctx.ReadValue<Vector2>();
     }
 
     void OnEnable()
@@ -99,22 +128,22 @@ public class Sc_SortInput : MonoBehaviour
             {
                 if (move.x > 0f)
                 {
-                    moveCard = MoveCard.E;
+                    moveCard = DirType.E;
                 }
                 else
                 {
-                    moveCard = MoveCard.W;
+                    moveCard = DirType.W;
                 }
             }
             else
             {
                 if (move.y > 0f)
                 {
-                    moveCard = MoveCard.N;
+                    moveCard = DirType.N;
                 }
                 else
                 {
-                    moveCard = MoveCard.S;
+                    moveCard = DirType.S;
                 }
             }
 
@@ -127,12 +156,26 @@ public class Sc_SortInput : MonoBehaviour
         else
         {
             // No movement
-            moveCard = MoveCard.None;
+            moveCard = DirType.None;
             // Store the active jen bool
             jen_ActiveBool[1] = false;
         }
+
         // Store the current movement cardinal
         storeMoveCard = moveCard;
+
+        // Camera panning
+        // For controller mode
+        if (controlScheme == 1)
+        {
+            cameraPan = cameraStick;
+        }
+        // For mouse mode
+        else if (controlScheme == 0)
+        {
+            cameraPan = new Vector2(Mathf.Clamp(mousePos.x/Screen.width - 0.5f, -1f, 1f), Mathf.Clamp(mousePos.y/Screen.height - 0.5f, -1f, 1f));
+        }
+
 
         // Update all jen_Bools
 		for (int i = 0; i < jen_Total; i++)
@@ -143,11 +186,51 @@ public class Sc_SortInput : MonoBehaviour
         // Pass the final bools to the named bools
         undo = jen_FinalBool[0];
         isMove = jen_FinalBool[1];
+        reset = jen_FinalBool[2];
+        stairsUp = jen_FinalBool[3];
+        stairsDown = jen_FinalBool[4];
+        select = jen_FinalBool[5];
+
+
+        // For up and down movement
+        if (stairsUp)
+        {
+            moveCard = DirType.U;
+        }
+        else if (stairsDown)
+        {
+            moveCard = DirType.D;
+        }
+
+        // For menu items        
+        // We can borrow the moveCard until the final step
+        if (moveCard != DirType.None && moveCard != DirType.U && moveCard != DirType.D)
+        {
+            // If the jeneric action is available, perform it
+            if (jen_FinalBool[1])
+            {
+                moveCard_Menu = moveCard;
+            }
+            else
+            {
+                moveCard_Menu = DirType.None;
+            }
+        }
     }
 
-    void Action_Pause()
+    public void Action_Pause()
     {
-        // Perform the Pause action
+        // We can only change the pause state of this item when we're in the main game
+        if (!GM.Instance.isTitleMenu)
+        {
+            isOptions = !isOptions;
+            Action_PlayerControls(!isPlayer);
+        }
+    }
+
+    public void Action_PlayerControls(bool p_PlayerControls)
+    {
+        isPlayer = p_PlayerControls;
     }
 
     void Action_Select()
@@ -160,11 +243,40 @@ public class Sc_SortInput : MonoBehaviour
         // Perform the reset action
     }
 
-    //##############//
+    //////////////////
 	//	FUNCTIONS	//
-	//##############//
+	//////////////////
 
-	// This 'jeneric' script allows the user to hold down a button, which repeat an action after a fixed period
+    // Switch between holding and tapping buttons based on options menu (To implement)
+    void Check_HoldOrTap(ref bool refBool, int isStarted)
+    {
+        // Started
+        if (isStarted == 0)
+        {
+            if (!isHoldMode)
+            {
+                refBool = !refBool;
+            }
+        }
+        // Performed
+        else if (isStarted == 1)
+        {
+            if (isHoldMode)
+            {
+                refBool = true;
+            }
+        }
+        // Is cancelled
+        else if (isStarted == 2)
+        {
+            if (isHoldMode)
+            {
+                refBool = false;
+            }
+        }
+    }
+
+	// This 'jeneric' script allows the user to hold down a button, which repeats an action after a fixed period
 	// Or allows the user to tap the button quickly
 	void Jen_TimedStateFunction(int p_ButtonIndex)
 	{
@@ -192,7 +304,7 @@ public class Sc_SortInput : MonoBehaviour
 		}
 		else
 		{
-			//Reset the timer and the button
+			// Reset the timer and the button
 			jen_Timer[p_ButtonIndex] = 0.0f;
 			jen_FinalBool[p_ButtonIndex] = false;
 		}
